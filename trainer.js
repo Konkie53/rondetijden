@@ -151,6 +151,7 @@
     return b;
   }
   const dc = s => fmt(s).replace('.', ',');
+  const sec = s => String(+(+s).toFixed(2)).replace('.', ','); /* 25 → "25", 25.5 → "25,5" */
   const rinkName = () => (RINKS.find(r => r.id === S.rink) || RINKS[0]).name;
   function lapClass(d, g, prev) {
     if (g && g.target) return d <= g.target ? 'good' : d <= g.target + 0.5 ? 'ok' : 'bad';
@@ -531,7 +532,7 @@
         <div><div class="tm">${dc(r.best.d)}</div><div class="gp">${gap}</div></div></div>`;
     }).join('');
     return `<div class="ghead"><h2>🏆 Klassement</h2></div>${scopes}
-      <div class="small muted" style="margin-bottom:8px">Snelste ronde van vandaag${sc ? ' in ' + esc(sc.name) : ''}. Alleen rondes tussen ${dc(S.lapMin)} en ${dc(S.lapMax)} s tellen mee.</div>
+      <div class="small muted" style="margin-bottom:8px">Snelste ronde van vandaag${sc ? ' in ' + esc(sc.name) : ''}. Alleen rondes tussen ${sec(S.lapMin)} en ${sec(S.lapMax)} s tellen mee.</div>
       ${rows.length ? `<div class="list">${list}</div>` : '<div class="empty">Nog niemand in deze groep.</div>'}
       <div class="row" style="margin-top:12px"><button data-a="share" style="flex:1">📤 Deel klassement</button><button data-a="notify">${S.notify ? '🔔 Melding aan' : '🔕 Melding uit'}</button></div>`;
   }
@@ -583,14 +584,14 @@
   }
   function summaryText(groups, rankOnly) {
     const date = new Date().toLocaleDateString('nl-NL', { weekday: 'short', day: 'numeric', month: 'short' });
-    const head = `*Training ${rinkName()} · ${date}*\nRondes tussen ${dc(S.lapMin)} en ${dc(S.lapMax)} s tellen mee.`;
+    const head = `*Training ${rinkName()} · ${date}*\nRondes tussen ${sec(S.lapMin)} en ${sec(S.lapMax)} s tellen mee.`;
     const chips = [...new Set(groups.flatMap(g => g.chips))];
     const parts = [head];
-    if (groups.length === 1) parts[0] = head.replace('*\n', ' · ' + groups[0].name + '*\n');
+    if (groups.length === 1) parts[0] = head.replace('*\n', ' · ' + groups[0].name + '*\n') + (groups[0].target ? ' Doeltijd ' + sec(groups[0].target) + ' s.' : '');
     const rk = rankText(chips); if (rk) parts.push(rk);
     if (!rankOnly) for (const g of groups) {
       if (!g.chips.length) continue;
-      parts.push((groups.length > 1 ? `▪️ *${g.name}*\n` : '') + g.chips.map(riderText).join('\n'));
+      parts.push((groups.length > 1 ? `▪️ *${g.name}*\n` : '') + g.chips.map(riderText).join('\n\n'));
     }
     return parts.join('\n\n');
   }
