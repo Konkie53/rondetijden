@@ -45,7 +45,7 @@
   const today = () => new Date().toLocaleDateString('sv');
   const dayOf = iso => new Date(iso).toLocaleDateString('sv');
   const loadState = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } };
-  const S = Object.assign({ rink: HOME_RINK, groups: [], names: {}, tab: 'ice', lapMin: 25, lapMax: 37, showEarlier: false, hist: null, ver: 3 }, loadState());
+  const S = Object.assign({ rink: HOME_RINK, groups: [], names: {}, tab: 'ice', lapMin: 25, lapMax: 37, showEarlier: false, hist: null }, loadState());
   if (!S.names || typeof S.names !== 'object') S.names = {};
   if (!Array.isArray(S.groups)) S.groups = [];
   if (!(S.ver >= 3)) { S.rink = HOME_RINK; S.lapMin = 25; S.lapMax = 37; S.ver = 3; delete S.pauseFactor; delete S.rinkName; }
