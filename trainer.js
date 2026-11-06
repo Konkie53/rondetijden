@@ -298,6 +298,16 @@
   .sheet .row button{flex:1}
   .sheet textarea{min-height:130px}
   @media (min-width:700px){.sheet{left:50%;right:auto;width:520px;transform:translateX(-50%);top:10vh}}
+  /* tablet: wat groter, je kijkt van verder af */
+  @media (min-width:700px){
+    .app{font-size:17px}
+    .big{font-size:52px}
+    .delta{font-size:17px}
+    .stats{font-size:14px}
+    .lap{font-size:15px;padding:5px 8px}
+    .cards{grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px}
+    main{padding-left:16px;padding-right:16px}
+  }
   .swatches{display:flex;gap:10px;flex-wrap:wrap}
   .swatches button{width:44px;height:44px;border-radius:50%;padding:0;border:3px solid transparent;background:var(--c);box-shadow:inset 0 0 0 2px var(--card)}
   .swatches button.on{border-color:var(--ink)}
