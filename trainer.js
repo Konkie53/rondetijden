@@ -254,8 +254,10 @@
   .hint{background:var(--card);border:1px solid var(--acc);border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:15px}
   .tag{display:inline-block;font-size:12px;padding:1px 7px;border-radius:999px;background:var(--bg);border:1px solid var(--line);color:var(--mute);margin:3px 4px 0 0}
   .bar{position:fixed;left:0;right:0;bottom:0;padding:10px 12px calc(env(safe-area-inset-bottom) + 10px);background:var(--card);border-top:1px solid var(--line);display:flex;gap:8px;overflow-x:auto;box-shadow:0 -6px 20px -12px rgba(0,0,0,.35)}
-  .ghead{display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap}
-  .ghead h2{font-size:20px;margin:0;flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis}
+  .ghead{display:flex;align-items:center;gap:6px;margin-bottom:10px}
+  .ghead h2{font-size:20px;margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ghead button{flex:none;padding-left:10px;padding-right:10px}
+  .ghead .swatch{background:none;border-color:transparent;min-width:36px;padding:4px}
   .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 12px 12px}
   .ctop{display:flex;align-items:baseline;gap:8px}
@@ -392,7 +394,7 @@
       <span>${activeCount} schaatser${activeCount === 1 ? '' : 's'} op het ijs</span>
       <button class="ghost small" data-a="earlier">${S.showEarlier ? 'Alleen op het ijs' : 'Ook eerder vandaag'}</button></div>`;
     const hg = R.hint && S.groups.find(x => x.id === R.hint);
-    const hint = hg ? `<div class="hint">Tik de rijders aan voor <b>${esc(hg.name)}</b> en tik daarna onderaan op <b>+ ${esc(hg.name)}</b>.</div>` : '';
+    const hint = hg ? `<div class="hint" style="border-color:${hg.color}">Tik de rijders aan voor <b>${esc(hg.name)}</b> en tik daarna onderaan op <b>+ ${esc(hg.name)}</b>.</div>` : '';
     const empty = R.lastOk ? `<div class="empty">${q ? 'Niemand gevonden met “' + esc(R.q) + '”.' : 'Nu niemand op het ijs bij deze baan.'}</div>` : `<div class="empty">Gegevens laden…</div>`;
     return hint + head + (list ? `<div class="list">${list}</div>` : empty) + `<div class="empty small">Tik schaatsers aan om ze in een groep te zetten. ✎ = naam van de rijder invullen, › = rondetijden.</div>`;
   }
@@ -402,7 +404,7 @@
     const hg = R.hint && S.groups.find(x => x.id === R.hint);
     const others = S.groups.filter(g => g !== hg);
     return `<div class="bar">
-      ${hg ? `<button class="pri" data-a="addto" data-v="${esc(hg.id)}">+ ${esc(hg.name)} (${R.sel.size})</button><button data-a="mkgroup">Nieuwe groep</button>`
+      ${hg ? `<button class="pri" data-a="addto" data-v="${esc(hg.id)}" style="background:${hg.color};border-color:${hg.color};color:#fff">+ ${esc(hg.name)} (${R.sel.size})</button><button data-a="mkgroup">Nieuwe groep</button>`
            : `<button class="pri" data-a="mkgroup">Nieuwe groep (${R.sel.size})</button>`}
       ${others.map(g => `<button data-a="addto" data-v="${esc(g.id)}" style="--gc:${g.color}"><span class="gdot"></span>${esc(g.name)}</button>`).join('')}
       <button class="ghost" data-a="clearsel">Wissen</button></div>`;
@@ -448,7 +450,7 @@
   function groupHTML(g) {
     const cards = g.chips.map(c => cardHTML(c, g)).join('');
     return `<div class="ghead" style="--gc:${g.color}"><button class="icon swatch" data-a="color" aria-label="Kleur van de groep"><span class="sw"></span></button><h2>${esc(g.name)}</h2>
-      <button data-a="target">🎯 ${g.target ? fmt(g.target) : 'Doeltijd'}</button>
+      <button data-a="target">🎯 ${g.target ? fmt(g.target) : 'Doel'}</button>
       <button class="icon" data-a="rengroup" aria-label="Groep hernoemen">✎</button>
       <button class="icon" data-a="delgroup" aria-label="Groep verwijderen">🗑</button></div>
       ${g.chips.length ? `<div class="cards">${cards}</div>` : `<div class="empty">Nog niemand in deze groep.</div>`}
@@ -495,7 +497,11 @@
     const g = activeGroup();
     put($('hdr'), headerHTML());
     $('searchwrap').hidden = S.tab !== 'ice' || !!R.detail;
-    put($('nav'), navHTML());
+    if (put($('nav'), navHTML())) {
+      /* actief tabblad in beeld schuiven */
+      const nav = $('nav'), on = nav.querySelector('.on');
+      if (on && (on.offsetLeft < nav.scrollLeft || on.offsetLeft + on.offsetWidth > nav.scrollLeft + nav.clientWidth)) nav.scrollLeft = Math.max(0, on.offsetLeft - 12);
+    }
     const err = R.err ? `<div class="err">Kan Speedhive nu niet bereiken (${esc(R.err)}). Ik probeer het elke ${POLL_MS / 1000} s opnieuw.</div>` : '';
     put($('main'), err + (g ? groupHTML(g) : iceHTML()));
     put($('bar'), barHTML());
