@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Rondetijden Trainer</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Eén kolom, grote stappen; je volgt het van boven naar beneden op je telefoon. */
+:root{
+  --ice:#eef3f7; --paper:#fff; --ink:#0e1b2b; --mute:#5a6b80; --line:#d6dfe8;
+  --lane:#0b4f8a; --laneInk:#fff; --signal:#d9480f; --good:#13854a;
+  --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --body:"Source Sans 3",-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --ice:#0b131d; --paper:#121d2a; --ink:#e7eef6; --mute:#96a7ba; --line:#243346;
+  --lane:#5aa9ff; --laneInk:#04111f; --signal:#ff8a4c; --good:#4fd18b; color-scheme:dark}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--ice);color:var(--ink);font:18px/1.5 var(--body)}
+.wrap{max-width:560px;margin:0 auto;padding:calc(env(safe-area-inset-top) + 28px) max(16px,env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 48px) max(16px,env(safe-area-inset-left))}
+h1{font:700 48px/.95 var(--display);margin:0 0 10px}
+h1 span{color:var(--lane)}
+.lead{margin:0 0 24px;color:var(--mute)}
+.tabs{display:flex;gap:6px;margin:0 0 14px}
+.tabs button{flex:1;font:600 16px var(--body);padding:10px;border-radius:999px;border:1px solid var(--line);background:var(--paper);color:var(--ink)}
+.tabs button[aria-selected="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+ol.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px;counter-reset:s}
+ol.steps>li{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:16px 16px 16px 60px;position:relative;counter-increment:s}
+ol.steps>li::before{content:counter(s);position:absolute;left:16px;top:12px;font:700 34px/1 var(--display);color:var(--signal)}
+ol.steps b{font-weight:700}
+.btn{display:block;width:100%;text-align:center;font:700 19px var(--body);padding:16px;border-radius:12px;border:0;background:var(--lane);color:var(--laneInk);text-decoration:none;cursor:pointer;margin-top:10px}
+.btn:focus-visible,button:focus-visible{outline:3px solid var(--signal);outline-offset:2px}
+.code{display:block;margin-top:10px;font:500 12px/1.4 var(--mono);color:var(--mute);background:var(--ice);border:1px solid var(--line);border-radius:8px;padding:8px;word-break:break-all;user-select:all;-webkit-user-select:all}
+.ok{color:var(--good);font-weight:700;margin:8px 0 0;min-height:1.5em}
+.hint{font-size:15px;color:var(--mute);margin:6px 0 0}
+h2{font:700 30px/1 var(--display);margin:32px 0 12px}
+.faq{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:4px 16px}
+.faq details{border-bottom:1px solid var(--line);padding:12px 0}
+.faq details:last-child{border-bottom:0}
+.faq summary{font-weight:700;cursor:pointer}
+.faq p{margin:8px 0 0}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Rondetijden <span>Trainer</span></h1>
+  <p class="lead">Live rondetijden van je schaatsers, per groepje, op je telefoon. Je stelt het één keer in, daarna is het één tik.</p>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" id="t-ios" aria-selected="true">iPhone</button>
+    <button role="tab" id="t-and" aria-selected="false">Android</button>
+  </div>
+
+  <ol class="steps" id="ios">
+    <li><b>Kopieer de code.</b>
+      <button class="btn" data-copy>Kopieer code</button>
+      <div class="ok" role="status" aria-live="polite"></div>
+      <span class="code" data-code></span>
+    </li>
+    <li><b>Maak een bladwijzer van deze pagina.</b> Tik onderin op het deel-icoon <span aria-hidden="true">(vierkantje met pijl omhoog)</span> en kies <b>Voeg bladwijzer toe</b>. Tik op <b>Bewaar</b>.</li>
+    <li><b>Zet de code in die bladwijzer.</b> Tik onderin op het boek-icoon, dan op <b>Wijzig</b>, en tik op de bladwijzer die je net maakte.
+      <p class="hint">Maak de naam <b>Rondetijden</b>. Wis het adres eronder helemaal, houd je vinger op het lege veld en kies <b>Plak</b>. Tik op <b>Gereed</b>.</p></li>
+    <li><b>Klaar. Zo gebruik je het:</b> open Speedhive met de knop hieronder. Tik daar bovenin op de adresbalk, typ <b>Rondetijden</b> en tik op de bladwijzer die verschijnt.
+      <a class="btn" href="https://speedhive.mylaps.com/practice/2497">Open Speedhive</a></li>
+  </ol>
+
+  <ol class="steps" id="and" hidden>
+    <li><b>Kopieer de code.</b>
+      <button class="btn" data-copy>Kopieer code</button>
+      <div class="ok" role="status" aria-live="polite"></div>
+      <span class="code" data-code></span>
+    </li>
+    <li><b>Maak een bladwijzer van deze pagina.</b> Tik rechtsboven op <b>⋮</b> en dan op het sterretje.</li>
+    <li><b>Zet de code in die bladwijzer.</b> Tik onderin op <b>Bewerken</b> (of ga via ⋮ naar Bladwijzers en houd hem ingedrukt).
+      <p class="hint">Maak de naam <b>Rondetijden</b>. Wis de URL helemaal en plak de code. Ga terug om op te slaan.</p></li>
+    <li><b>Klaar. Zo gebruik je het:</b> open Speedhive met de knop hieronder. Tik daar op de adresbalk, typ <b>Rondetijden</b> en kies de bladwijzer met het sterretje.
+      <a class="btn" href="https://speedhive.mylaps.com/practice/2497">Open Speedhive</a></li>
+  </ol>
+
+  <h2>Bij de baan</h2>
+  <div class="faq">
+    <details open><summary>Groepjes maken</summary><p>Onder <b>Op het ijs</b> staat iedereen die nu schaatst. Tik je schaatsers aan en tik op <b>Nieuwe groep</b>. Staat er alleen een code? Tik op <b>›</b> en dan <b>✎ Naam</b>.</p></details>
+    <details><summary>Wat zie ik per schaatser?</summary><p>Groot de laatste ronde, met hoeveel sneller (groen) of langzamer (rood) dan de vorige. Daaronder de beste ronde en de laatste rondes. Tik op iemand voor alle rondes van vandaag.</p></details>
+    <details><summary>Doeltijd</summary><p>Tik in een groep op <b>🎯 Doeltijd</b> en vul bijvoorbeeld <b>34</b> in. Groen is op schema, geel net erboven, rood te langzaam.</p></details>
+    <details><summary>Ik zie een slotje 🔒</summary><p>Die schaatser heeft de tijden in Speedhive op privé staan. De schaatser kan dat zelf aanzetten in de Speedhive-app.</p></details>
+    <details><summary>Het werkt niet</summary><p>Zorg dat je eerst op Speedhive bent en daarna de bladwijzer aantikt. Plak de code in het adres van de bladwijzer, niet in de adresbalk. Op iPhone werkt het in Safari.</p></details>
+    <details><summary>Terug naar gewoon Speedhive</summary><p>Tik op <b>✕</b> rechtsboven. Tik opnieuw op de bladwijzer om het weer te openen.</p></details>
+  </div>
+  <p class="hint" style="margin-top:20px">Eigen hulpmiddel, geen app van MYLAPS. Groepen en namen blijven op je eigen telefoon.</p>
+</div>
+<script>
+(function(){
+  var dir = location.href.replace(/[#?].*$/, '').replace(/[^\/]*$/, '');
+  var code = "javascript:(function(){var s=document.createElement('script');s.src='" + dir + "trainer.js?v='+Date.now();document.body.appendChild(s);})();";
+  document.querySelectorAll('[data-code]').forEach(function(el){ el.textContent = code; });
+  document.querySelectorAll('[data-copy]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var ok = btn.parentNode.querySelector('.ok'), box = btn.parentNode.querySelector('[data-code]');
+      function done(){ ok.textContent = 'Gekopieerd. Ga door met stap 2.'; }
+      function fail(){ var r = document.createRange(); r.selectNodeContents(box); var s = getSelection(); s.removeAllRanges(); s.addRange(r); ok.textContent = 'De code is geselecteerd. Tik op Kopieer.'; }
+      try { navigator.clipboard.writeText(code).then(done, fail); } catch (e) { fail(); }
+    });
+  });
+  var tios = document.getElementById('t-ios'), tand = document.getElementById('t-and');
+  function show(android){ document.getElementById('ios').hidden = android; document.getElementById('and').hidden = !android; tios.setAttribute('aria-selected', !android); tand.setAttribute('aria-selected', android); }
+  tios.onclick = function(){ show(false); }; tand.onclick = function(){ show(true); };
+  if (/Android/i.test(navigator.userAgent)) show(true);
+})();
+</script>
+</body>
+</html>
