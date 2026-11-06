@@ -10,7 +10,7 @@
     return;
   }
 
-  const VERSION = '3';
+  const VERSION = '4';
   const API = 'https://practice-api.speedhive.com/api/v1/';
   const KEY = 'rtTrainer.v1';
   const POLL_MS = 5000;
@@ -45,7 +45,7 @@
   const today = () => new Date().toLocaleDateString('sv');
   const dayOf = iso => new Date(iso).toLocaleDateString('sv');
   const loadState = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } };
-  const S = Object.assign({ rink: HOME_RINK, groups: [], names: {}, tab: 'ice', lapMin: 25, lapMax: 37, showEarlier: false, hist: null }, loadState());
+  const S = Object.assign({ rink: HOME_RINK, groups: [], names: {}, tab: 'ice', lapMin: 25, lapMax: 37, showEarlier: false, hist: null, rankScope: 'all', notify: true }, loadState());
   if (!S.names || typeof S.names !== 'object') S.names = {};
   if (!Array.isArray(S.groups)) S.groups = [];
   if (!(S.ver >= 3)) { S.rink = HOME_RINK; S.lapMin = 25; S.lapMax = 37; S.ver = 3; delete S.pauseFactor; delete S.rinkName; }
@@ -60,7 +60,8 @@
   const R = {
     today: new Map(), laps: new Map(), sel: new Set(), detail: null,
     lastOk: 0, err: null, timer: null, tick: null, open: true, first: true, busy: false, wake: null,
-    touching: false, lastTouch: 0, deferT: null, modal: false, q: ''
+    touching: false, lastTouch: 0, deferT: null, modal: false, q: '',
+    recs: new Map(), recsReady: false, toastT: null
   };
 
   /* ---------- helpers ---------- */
@@ -143,6 +144,14 @@
     if (cur) blocks.push(cur);
     return blocks;
   }
+  /* snelste ronde die meetelt binnen een set rijders */
+  function bestOf(chips) {
+    let b = null;
+    for (const c of chips) for (const l of lapsOf(c)) if (!l.pause && (!b || l.d < b.d)) b = { chip: c, d: l.d, t: l.t };
+    return b;
+  }
+  const dc = s => fmt(s).replace('.', ',');
+  const rinkName = () => (RINKS.find(r => r.id === S.rink) || RINKS[0]).name;
   function lapClass(d, g, prev) {
     if (g && g.target) return d <= g.target ? 'good' : d <= g.target + 0.5 ? 'ok' : 'bad';
     if (prev == null) return '';
@@ -165,7 +174,7 @@
 
   async function refreshLaps() {
     const chips = new Set();
-    const g = activeGroup(); if (g) g.chips.forEach(c => chips.add(c));
+    groupChips().forEach(c => chips.add(c)); /* alle groepen: voor klassement en meldingen */
     if (R.detail) chips.add(R.detail);
     const todo = [];
     for (const c of chips) for (const a of actsOf(c)) {
@@ -197,6 +206,7 @@
       save();
       await refreshLaps();
       R.lastOk = Date.now(); R.err = null;
+      checkRecords();
     } catch (e) { if (e) R.err = e.message || String(e); }
     R.busy = false;
     render();
@@ -319,6 +329,27 @@
   .tag.g{border-color:var(--gc);color:var(--ink)}
   .tag.g::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gc);margin-right:5px}
   .settings button{min-height:34px;padding:4px 12px}
+  .scopes{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin-bottom:10px}
+  .scopes::-webkit-scrollbar{display:none}
+  .scopes button{border-radius:999px;padding:6px 14px;min-height:38px;flex:none}
+  .scopes button.on{background:var(--ink);color:var(--card);border-color:var(--ink);font-weight:600}
+  .scopes button.on.g{background:var(--gc);border-color:var(--gc);color:#fff}
+  .scopes button.on.g .gdot{background:#fff}
+  .rk{display:grid;grid-template-columns:38px minmax(0,1fr) auto;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px;min-height:60px}
+  .rk.top{border-color:#c99a14;box-shadow:inset 0 0 0 1px #c99a14}
+  .rk.none{opacity:.6}
+  .rk .pos{font-size:22px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums}
+  .rk .tm{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;text-align:right;line-height:1.1}
+  .rk .gp{font-size:13px;color:var(--mute);text-align:right;font-variant-numeric:tabular-nums}
+  .tag.new{background:#c99a14;border-color:#c99a14;color:#fff;font-weight:600}
+  .toast{position:fixed;left:10px;right:10px;top:calc(env(safe-area-inset-top) + 62px);z-index:5;background:var(--gc);color:#fff;border-radius:16px;padding:12px 14px;display:flex;gap:12px;align-items:center;box-shadow:0 12px 34px rgba(0,0,0,.35);animation:pop .35s ease-out}
+  .toast .ti{font-size:34px;line-height:1}
+  .toast .tn{font-size:22px;font-weight:700;line-height:1.2}
+  .toast .tn b{font-variant-numeric:tabular-nums}
+  .toast .small{opacity:.9}
+  @keyframes pop{from{transform:translateY(-14px);opacity:0}}
+  @media (min-width:700px){.toast{left:50%;right:auto;width:520px;transform:translateX(-50%);animation:none}.rk .tm{font-size:32px}}
+  @media (prefers-reduced-motion:reduce){.toast{animation:none}}
   .fields{display:flex;gap:10px}
   .fields label{flex:1;font-size:13px;color:var(--mute);display:flex;flex-direction:column;gap:4px}
   </style><div class="app" lang="nl">
@@ -327,6 +358,7 @@
     <nav id="nav"></nav>
     <main id="main"></main>
     <div id="bar"></div>
+    <div id="toast"></div>
     <div class="modal" id="detail" hidden><div class="hdr" id="dhdr"></div><main id="dmain"></main></div>
   </div><div class="app" id="layerapp" style="position:static;inset:auto;display:block;background:none"><div id="layer"></div></div>`;
   const $ = id => root.getElementById(id);
@@ -374,6 +406,7 @@
   }
   function navHTML() {
     return `<button data-a="tab" data-v="ice" class="${S.tab === 'ice' ? 'on' : ''}">Op het ijs</button>
+      <button data-a="tab" data-v="rank" class="${S.tab === 'rank' ? 'on' : ''}">🏆 Klassement</button>
       ${S.groups.map(g => `<button data-a="tab" data-v="${esc(g.id)}" class="g${S.tab === g.id ? ' on' : ''}" style="--gc:${g.color}"><span class="gdot"></span>${esc(g.name)} · ${g.chips.length}</button>`).join('')}
       <button data-a="newgroup">+ Groep</button>`;
   }
@@ -420,7 +453,7 @@
       <button class="ghost" data-a="clearsel">Wissen</button></div>`;
   }
 
-  function cardHTML(chip, g) {
+  function cardHTML(chip, g, top) {
     const laps = lapsOf(chip), act = latestAct(chip);
     const valid = laps.filter(l => !l.pause);
     const last = laps[laps.length - 1];
@@ -450,7 +483,7 @@
     else if (laps.length) body = `<div class="small muted" style="padding:6px 0">Nog geen ronde tussen ${fmt(S.lapMin)} en ${fmt(S.lapMax)} s.</div><div class="strip">${strip}</div>`;
     else body = `<div class="small muted" style="padding:6px 0">${deniedAll(chip) ? '🔒 Deze rijder heeft de rondetijden in Speedhive op privé staan.' : act ? 'Rondes laden…' : 'Vandaag nog niet gezien op deze baan.'}</div>`;
     return `<div class="card${g ? ' gc' : ''}" ${g ? `style="--gc:${g.color}"` : ''} data-a="detail" data-v="${esc(chip)}">
-      <div class="row"><div class="grow"><div class="nm">${esc(nameOf(chip))}</div><div class="sub${!rider(chip) && !tLabel(chip) ? ' noname' : ''}">${esc(subOf(chip))}</div></div>
+      <div class="row"><div class="grow"><div class="nm">${top ? '🏆 ' : ''}${esc(nameOf(chip))}</div><div class="sub${!rider(chip) && !tLabel(chip) ? ' noname' : ''}">${esc(subOf(chip))}</div></div>
         <span class="small">${status}</span>
         <button class="ghost icon" data-a="rename" data-v="${esc(chip)}" aria-label="Naam rijder">✎</button></div>
       ${body}
@@ -458,14 +491,129 @@
   }
 
   function groupHTML(g) {
-    const cards = g.chips.map(c => cardHTML(c, g)).join('');
+    const top = g.chips.length > 1 ? bestOf(g.chips) : null;
+    const cards = g.chips.map(c => cardHTML(c, g, top && top.chip === c)).join('');
     return `<div class="ghead" style="--gc:${g.color}"><button class="icon swatch" data-a="color" aria-label="Kleur van de groep"><span class="sw"></span></button><h2>${esc(g.name)}</h2>
       <button data-a="target">🎯 ${g.target ? fmt(g.target) : 'Doel'}</button>
       <button class="icon" data-a="rengroup" aria-label="Groep hernoemen">✎</button>
       <button class="icon" data-a="delgroup" aria-label="Groep verwijderen">🗑</button></div>
       ${g.chips.length ? `<div class="cards">${cards}</div>` : `<div class="empty">Nog niemand in deze groep.</div>`}
-      <div class="row" style="margin-top:12px"><button data-a="addmore" style="flex:1">+ Rijders toevoegen</button></div>
+      <div class="row" style="margin-top:12px"><button data-a="addmore" style="flex:1">+ Rijders toevoegen</button><button data-a="share">📤 Delen</button></div>
       <div class="settings" data-a="window"><span>Ronde telt mee tussen <b>${fmt(S.lapMin)}</b> en <b>${fmt(S.lapMax)}</b> s.</span><button class="small">Wijzig</button></div>`;
+  }
+
+  /* ---------- klassement: snelste ronde van vandaag ---------- */
+  const scopeChips = () => { const g = S.groups.find(x => x.id === S.rankScope); return g ? g.chips.slice() : [...groupChips()]; };
+  function rankRows(chips) {
+    const rows = [...new Set(chips)].map(c => {
+      const valid = lapsOf(c).filter(l => !l.pause);
+      let b = null; for (const l of valid) if (!b || l.d < b.d) b = l;
+      return { chip: c, best: b, n: valid.length };
+    });
+    rows.sort((x, y) => (x.best ? x.best.d : 1e9) - (y.best ? y.best.d : 1e9) || nameOf(x.chip).localeCompare(nameOf(y.chip), 'nl'));
+    return rows;
+  }
+  const medal = i => ['🥇', '🥈', '🥉'][i] || (i + 1) + '.';
+  function rankHTML() {
+    if (!S.groups.length) return `<div class="ghead"><h2>🏆 Klassement</h2></div><div class="empty">Maak eerst een groep onder <b>Op het ijs</b>. Het klassement laat de snelste ronde van de rijders in je groepen zien.</div>`;
+    if (S.rankScope !== 'all' && !S.groups.some(g => g.id === S.rankScope)) S.rankScope = 'all';
+    const sc = S.groups.find(g => g.id === S.rankScope);
+    const scopes = S.groups.length > 1 ? `<div class="scopes"><button data-a="scope" data-v="all" class="${sc ? '' : 'on'}">Alle groepen</button>${S.groups.map(g => `<button data-a="scope" data-v="${esc(g.id)}" class="g${sc === g ? ' on' : ''}" style="--gc:${g.color}"><span class="gdot"></span>${esc(g.name)}</button>`).join('')}</div>` : '';
+    const now = Date.now(), rows = rankRows(scopeChips());
+    const lead = rows[0] && rows[0].best;
+    const list = rows.map((r, i) => {
+      const gs = sc ? '' : groupOfChip(r.chip).map(g => `<span class="tag g" style="--gc:${g.color}">${esc(g.name)}</span>`).join('');
+      if (!r.best) return `<div class="rk none" data-a="detail" data-v="${esc(r.chip)}"><span class="pos">–</span><div class="grow"><div class="nm">${esc(nameOf(r.chip))}</div><div class="sub">${deniedAll(r.chip) ? '🔒 tijden op privé' : 'nog geen ronde die meetelt'}</div>${gs}</div><span></span></div>`;
+      const fresh = r.best.t + r.best.d * 1000 > now - 120000;
+      const gap = i && lead ? '+' + (r.best.d - lead.d).toFixed(2).replace('.', ',') : '';
+      return `<div class="rk${i === 0 ? ' top' : ''}" data-a="detail" data-v="${esc(r.chip)}"><span class="pos">${medal(i)}</span>
+        <div class="grow"><div class="nm">${esc(nameOf(r.chip))}</div><div class="sub">${r.n} ronde${r.n === 1 ? '' : 's'} · om ${clock(r.best.t + r.best.d * 1000)}</div>${fresh ? '<span class="tag new">net gereden</span>' : ''}${gs}</div>
+        <div><div class="tm">${dc(r.best.d)}</div><div class="gp">${gap}</div></div></div>`;
+    }).join('');
+    return `<div class="ghead"><h2>🏆 Klassement</h2></div>${scopes}
+      <div class="small muted" style="margin-bottom:8px">Snelste ronde van vandaag${sc ? ' in ' + esc(sc.name) : ''}. Alleen rondes tussen ${dc(S.lapMin)} en ${dc(S.lapMax)} s tellen mee.</div>
+      ${rows.length ? `<div class="list">${list}</div>` : '<div class="empty">Nog niemand in deze groep.</div>'}
+      <div class="row" style="margin-top:12px"><button data-a="share" style="flex:1">📤 Deel klassement</button><button data-a="notify">${S.notify ? '🔔 Melding aan' : '🔕 Melding uit'}</button></div>`;
+  }
+
+  /* ---------- melding bij een nieuwe snelste ronde ---------- */
+  function checkRecords() {
+    const now = Date.now(), news = [];
+    const scopes = S.groups.filter(g => g.chips.length > 1).map(g => ({ key: g.id, g, chips: g.chips }));
+    if (S.groups.length > 1) scopes.push({ key: 'all', g: null, chips: [...groupChips()] });
+    for (const sc of scopes) {
+      const b = bestOf(sc.chips), old = R.recs.get(sc.key);
+      R.recs.set(sc.key, b);
+      /* alleen echte verbeteringen van de laatste 2 minuten, niet bij het openen of na later geladen rondes */
+      if (R.recsReady && b && old && b.d < old.d - 0.001 && b.t + b.d * 1000 > now - 120000) news.push({ sc, b, old });
+    }
+    R.recsReady = true;
+    if (!S.notify || !news.length) return;
+    const all = news.find(n => !n.sc.g), n = all || news[news.length - 1];
+    const g = n.sc.g || groupOfChip(n.b.chip)[0];
+    showToast(n, g, !!all);
+  }
+  function showToast(n, g, overall) {
+    const el = $('toast');
+    const where = overall ? 'van alle groepen' : 'in ' + esc(n.sc.g.name);
+    const was = n.old.chip === n.b.chip ? 'eigen beste was ' + dc(n.old.d) : 'was ' + dc(n.old.d) + ' van ' + esc(nameOf(n.old.chip));
+    el.innerHTML = `<div class="toast" data-a="toast" role="status" style="--gc:${g ? g.color : '#1f2937'}"><span class="ti">🏆</span>
+      <div class="grow"><div class="small">Nieuwe snelste ronde ${where}</div><div class="tn">${esc(nameOf(n.b.chip))} <b>${dc(n.b.d)}</b></div><div class="small">${was}</div></div></div>`;
+    try { navigator.vibrate && navigator.vibrate([120, 60, 120]); } catch (e) {}
+    clearTimeout(R.toastT); R.toastT = setTimeout(hideToast, 9000);
+  }
+  function hideToast() { clearTimeout(R.toastT); const el = $('toast'); if (el) el.innerHTML = ''; }
+
+  /* ---------- samenvatting voor WhatsApp ---------- */
+  function riderText(chip) {
+    const laps = lapsOf(chip), valid = laps.filter(l => !l.pause);
+    if (!valid.length) return `*${nameOf(chip)}* – ${deniedAll(chip) ? 'tijden op privé' : 'geen rondes die meetellen'}`;
+    const best = Math.min(...valid.map(l => l.d));
+    const blocks = blocksOf(laps).filter(b => b.laps).map((b, i) => {
+      const ds = b.laps.map(l => l.d);
+      return ds.length === 1 ? `   Blok ${i + 1}: 1× ${dc(ds[0])}` : `   Blok ${i + 1}: ${ds.length}× gem ${dc(avg(ds))} (beste ${dc(Math.min(...ds))})`;
+    });
+    return [`*${nameOf(chip)}* – ${valid.length} ronde${valid.length === 1 ? '' : 's'} · beste ${dc(best)}`, ...blocks].join('\n');
+  }
+  function rankText(chips) {
+    const rows = rankRows(chips).filter(r => r.best);
+    if (!rows.length) return '';
+    const lead = rows[0].best.d;
+    return '🏆 *Snelste rondes*\n' + rows.map((r, i) => `${medal(i)} ${nameOf(r.chip)} ${dc(r.best.d)}${i ? ' (+' + (r.best.d - lead).toFixed(2).replace('.', ',') + ')' : ''}`).join('\n');
+  }
+  function summaryText(groups, rankOnly) {
+    const date = new Date().toLocaleDateString('nl-NL', { weekday: 'short', day: 'numeric', month: 'short' });
+    const head = `*Training ${rinkName()} · ${date}*\nRondes tussen ${dc(S.lapMin)} en ${dc(S.lapMax)} s tellen mee.`;
+    const chips = [...new Set(groups.flatMap(g => g.chips))];
+    const parts = [head];
+    if (groups.length === 1) parts[0] = head.replace('*\n', ' · ' + groups[0].name + '*\n');
+    const rk = rankText(chips); if (rk) parts.push(rk);
+    if (!rankOnly) for (const g of groups) {
+      if (!g.chips.length) continue;
+      parts.push((groups.length > 1 ? `▪️ *${g.name}*\n` : '') + g.chips.map(riderText).join('\n'));
+    }
+    return parts.join('\n\n');
+  }
+  function copyBtn(k, inp, b) {
+    if (k !== 'copy') return;
+    const ok = () => { b.textContent = 'Gekopieerd ✓'; };
+    const fail = () => { inp.focus(); inp.select(); b.textContent = 'Geselecteerd, kies Kopieer'; };
+    try { navigator.clipboard.writeText(inp.value).then(ok, fail); } catch (e) { fail(); }
+  }
+  async function shareSheet(text, title) {
+    const v = await sheet({
+      title, value: text, textarea: true, ok: navigator.share ? 'Deel' : 'Kopieer',
+      text: navigator.share ? 'Tik op <b>Deel</b> en kies WhatsApp. Je kunt de tekst eerst nog aanpassen.' : 'Kopieer de tekst en plak hem in WhatsApp.',
+      extra: navigator.share ? '<div class="row"><button data-s="copy">Kopieer tekst</button></div>' : '',
+      onExtra: copyBtn
+    });
+    if (v === null) return;
+    if (navigator.share) {
+      try { await navigator.share({ text: v }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    let ok = false;
+    try { await navigator.clipboard.writeText(v); ok = true; } catch (e) {}
+    await sheet({ title: ok ? 'Gekopieerd' : 'Kopiëren lukte niet', text: ok ? 'Open WhatsApp, kies de groep en plak de tekst.' : 'Houd je vinger op de tekst, kies Selecteer alles en dan Kopieer.', ok: 'Oké', value: ok ? undefined : v, textarea: !ok });
   }
 
   function detailParts(chip) {
@@ -503,7 +651,7 @@
       clearTimeout(R.deferT); R.deferT = setTimeout(() => render(), 650); return;
     }
     clearTimeout(R.deferT);
-    if (S.tab !== 'ice' && !activeGroup()) S.tab = 'ice';
+    if (S.tab !== 'ice' && S.tab !== 'rank' && !activeGroup()) S.tab = 'ice';
     const g = activeGroup();
     put($('hdr'), headerHTML());
     $('searchwrap').hidden = S.tab !== 'ice' || !!R.detail;
@@ -513,7 +661,7 @@
       if (on && (on.offsetLeft < nav.scrollLeft || on.offsetLeft + on.offsetWidth > nav.scrollLeft + nav.clientWidth)) nav.scrollLeft = Math.max(0, on.offsetLeft - 12);
     }
     const err = R.err ? `<div class="err">Kan Speedhive nu niet bereiken (${esc(R.err)}). Ik probeer het elke ${POLL_MS / 1000} s opnieuw.</div>` : '';
-    put($('main'), err + (g ? groupHTML(g) : iceHTML()));
+    put($('main'), err + (g ? groupHTML(g) : S.tab === 'rank' ? rankHTML() : iceHTML()));
     put($('bar'), barHTML());
     const d = $('detail');
     if (R.detail) { const p = detailParts(R.detail); put($('dhdr'), p.hdr); put($('dmain'), p.main); d.hidden = false; }
@@ -566,12 +714,7 @@
       text: 'Eén rijder per regel: eerst de transpondercode, dan de naam. Je kunt deze lijst kopiëren en naar een andere trainer sturen, of een lijst plakken die je hebt gekregen.',
       value: lines, textarea: true, placeholder: 'HL-42078 Ede Kortlever\nCR-41725 Elisa Jansen',
       extra: '<div class="row"><button data-s="copy">Kopieer lijst</button></div>',
-      onExtra: (k, inp, b) => {
-        if (k !== 'copy') return;
-        const ok = () => { b.textContent = 'Gekopieerd ✓'; };
-        const fail = () => { inp.focus(); inp.select(); b.textContent = 'Geselecteerd, kies Kopieer'; };
-        try { navigator.clipboard.writeText(inp.value).then(ok, fail); } catch (e) { fail(); }
-      }
+      onExtra: copyBtn
     });
     if (v === null) return;
     const names = {};
@@ -642,8 +785,16 @@
           collect: L => ({ min: num(L.querySelector('#wmin').value), max: num(L.querySelector('#wmax').value) })
         });
         if (!r) return;
-        if (r.min > 0 && r.max > r.min && r.max < 600) { S.lapMin = r.min; S.lapMax = r.max; show_(); }
+        if (r.min > 0 && r.max > r.min && r.max < 600) { S.lapMin = r.min; S.lapMax = r.max; R.recs.clear(); R.recsReady = false; show_(); }
         else { await sheet({ title: 'Dat klopt niet helemaal', text: 'De langzaamste ronde moet langer zijn dan de snelste, bijvoorbeeld 25 en 37.', ok: 'Oké' }); }
+        return;
+      }
+      case 'scope': S.rankScope = v; show_(); return;
+      case 'notify': S.notify = !S.notify; show_(); return;
+      case 'toast': hideToast(); return;
+      case 'share': {
+        if (g) await shareSheet(summaryText([g]), 'Training delen');
+        else { const sg = S.groups.find(x => x.id === S.rankScope); await shareSheet(summaryText(sg ? [sg] : S.groups, true), 'Klassement delen'); }
         return;
       }
       case 'detail': R.detail = v; render(true); pollNow(); return;
@@ -669,7 +820,7 @@
     const el = ev.target;
     if (el.dataset.a === 'rink') {
       S.rink = +el.value;
-      R.today.clear(); R.laps.clear(); R.sel.clear(); R.first = true; R.lastOk = 0; R.err = null; R.detail = null;
+      R.today.clear(); R.laps.clear(); R.sel.clear(); R.first = true; R.lastOk = 0; R.err = null; R.detail = null; R.recs.clear(); R.recsReady = false; hideToast();
       S.hist = { day: today(), rink: S.rink, acts: {} }; show_(); pollNow();
     }
   });
@@ -685,7 +836,7 @@
   }
   function hide() {
     R.open = false; host.style.display = 'none'; document.documentElement.style.overflow = prevOverflow;
-    clearTimeout(R.timer); clearInterval(R.tick); clearTimeout(R.deferT);
+    clearTimeout(R.timer); clearInterval(R.tick); clearTimeout(R.deferT); hideToast();
     try { R.wake && R.wake.release(); } catch (e) {} R.wake = null;
   }
   window[NS] = { toggle: () => (R.open ? hide() : show()), show: () => { if (!R.open) show(); }, version: VERSION };
