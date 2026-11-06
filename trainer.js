@@ -10,25 +10,55 @@
     return;
   }
 
-  const VERSION = '2';
+  const VERSION = '3';
   const API = 'https://practice-api.speedhive.com/api/v1/';
   const KEY = 'rtTrainer.v1';
   const POLL_MS = 5000;
   const ACTIVE_MIN = 10;
+  const HOME_RINK = 205;
+  /* Nederlandse banen met MYLAPS-tijden waar nu geschaatst wordt (gecontroleerd november 2026).
+     Hoorn staat bovenaan als hoofdbaan. Dubbele of gesloten banen (Flevonice, De Bonte Wever,
+     CoolsteBaan, oude Uithof, Schaatsbaan Rotterdam, Thialf backup, Hoorn X2) staan er niet in. */
+  const RINKS = [
+    { id: 205, name: 'Hoorn · De Westfries' },
+    { id: 2409, name: 'Alkmaar · De Meent' },
+    { id: 2040, name: 'Amsterdam · Jaap Eden' },
+    { id: 3111, name: 'Breda' },
+    { id: 2392, name: 'Den Haag · De Uithof' },
+    { id: 2052, name: 'Deventer · De Scheg' },
+    { id: 3279, name: 'Eindhoven' },
+    { id: 456, name: 'Enschede · IJsbaan Twente' },
+    { id: 304668569, name: 'Geleen · Glanerbrook' },
+    { id: 2427, name: 'Groningen · Kardinge' },
+    { id: 2822, name: 'Haarlem' },
+    { id: 2497, name: 'Heerenveen · Thialf' },
+    { id: 2381, name: 'Leeuwarden · Elfstedenhal' },
+    { id: 3930, name: 'Leiden · De Vliet' },
+    { id: 1052, name: 'Nijmegen · Triavium' },
+    { id: 2838, name: 'Tilburg · Ireen Wüst' },
+    { id: 1061, name: 'Utrecht · De Vechtsebanen' }
+  ];
+  /* groepskleuren: bewust geen rood/groen, die betekenen sneller/langzamer */
+  const COLORS = ['#2f6fed', '#f08c00', '#8e44d8', '#e0479e', '#0f9d9a', '#8a6a4b', '#4c51bf', '#6b8e23'];
 
   /* ---------- opslag ---------- */
   const today = () => new Date().toLocaleDateString('sv');
   const dayOf = iso => new Date(iso).toLocaleDateString('sv');
   const loadState = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } };
-  const S = Object.assign({ rink: 2497, rinkName: 'Thialf Heerenveen', groups: [], names: {}, tab: 'ice', pauseFactor: 1.6, showEarlier: false, hist: null }, loadState());
+  const S = Object.assign({ rink: HOME_RINK, groups: [], names: {}, tab: 'ice', lapMin: 25, lapMax: 37, showEarlier: false, hist: null, ver: 3 }, loadState());
   if (!S.names || typeof S.names !== 'object') S.names = {};
   if (!Array.isArray(S.groups)) S.groups = [];
+  if (!(S.ver >= 3)) { S.rink = HOME_RINK; S.lapMin = 25; S.lapMax = 37; S.ver = 3; delete S.pauseFactor; delete S.rinkName; }
+  if (!RINKS.some(r => r.id === S.rink)) S.rink = HOME_RINK;
+  if (!(S.lapMin > 0 && S.lapMax > S.lapMin)) { S.lapMin = 25; S.lapMax = 37; }
+  const nextColor = () => { const used = S.groups.map(g => g.color); return COLORS.find(c => !used.includes(c)) || COLORS[S.groups.length % COLORS.length]; };
+  S.groups.forEach(g => { if (!COLORS.includes(g.color)) g.color = nextColor(); });
   if (!S.hist || S.hist.day !== today()) S.hist = { day: today(), rink: S.rink, acts: {} };
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
 
   /* ---------- runtime ---------- */
   const R = {
-    rinks: null, today: new Map(), laps: new Map(), sel: new Set(), detail: null,
+    today: new Map(), laps: new Map(), sel: new Set(), detail: null,
     lastOk: 0, err: null, timer: null, tick: null, open: true, first: true, busy: false, wake: null,
     touching: false, lastTouch: 0, deferT: null, modal: false, q: ''
   };
@@ -83,9 +113,10 @@
     all.sort((x, y) => x.t - y.t);
     const out = []; let lastT = -1;
     for (const l of all) if (l.t !== lastT) { out.push(Object.assign({}, l)); lastT = l.t; }
-    const med = median(out.map(l => l.d));
     out.forEach((l, i) => {
-      l.pause = out.length >= 3 && l.d > med * S.pauseFactor;
+      /* een ronde telt mee als hij binnen het venster valt (standaard 25–37 s);
+         daarbuiten is het rust, een stijger of een halve ronde */
+      l.pause = l.d < S.lapMin || l.d > S.lapMax;
       const p = out[i - 1];
       l.gap = p ? Math.max(0, (l.t - (p.t + p.d * 1000)) / 1000) : 0; /* tijd van het ijs tussen twee sessies */
     });
@@ -100,7 +131,12 @@
     const blocks = []; let cur = null;
     for (const l of laps) {
       if (l.gap > 5) { if (cur) { blocks.push(cur); cur = null; } blocks.push({ off: true, gap: l.gap, from: l.t - l.gap * 1000 }); }
-      if (l.pause) { if (cur) { blocks.push(cur); cur = null; } blocks.push({ pause: true, lap: l }); continue; }
+      if (l.pause) {
+        if (cur) { blocks.push(cur); cur = null; }
+        const pb = blocks[blocks.length - 1];
+        if (pb && pb.pause && !(l.gap > 5)) pb.out.push(l); else blocks.push({ pause: true, out: [l] });
+        continue;
+      }
       if (!cur) cur = { laps: [] };
       cur.laps.push(l);
     }
@@ -114,20 +150,6 @@
   }
 
   /* ---------- data ophalen ---------- */
-  async function loadRinks() {
-    try {
-      const c = JSON.parse(localStorage.getItem(KEY + '.rinks') || 'null');
-      if (c && c.list && c.list.length && Date.now() - c.t < 7 * 864e5) { R.rinks = c.list; render(); return; }
-    } catch (e) {}
-    try {
-      const j = await getJSON('locations?sportCategory=NonMotorized');
-      R.rinks = (j.locations || []).filter(l => l.sport === 'IceSkating')
-        .map(l => ({ id: l.id, name: String(l.name || '').trim(), c: l.country || '' }))
-        .sort((a, b) => (a.c === 'nl' ? 0 : 1) - (b.c === 'nl' ? 0 : 1) || a.c.localeCompare(b.c) || a.name.localeCompare(b.name));
-      try { localStorage.setItem(KEY + '.rinks', JSON.stringify({ t: Date.now(), list: R.rinks })); } catch (e) {}
-    } catch (e) { R.rinks = []; }
-    render();
-  }
 
   async function fetchLaps(act) {
     let j;
@@ -267,11 +289,26 @@
   .settings{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px;color:var(--mute);margin-top:18px}
   .settings input{width:80px}
   .scrim{position:fixed;inset:0;background:var(--scrim);z-index:10}
-  .sheet{position:fixed;left:0;right:0;bottom:0;z-index:11;background:var(--card);border-radius:18px 18px 0 0;padding:18px 16px calc(env(safe-area-inset-bottom) + 16px);display:flex;flex-direction:column;gap:12px;max-height:88vh;overflow-y:auto;box-shadow:0 -10px 40px rgba(0,0,0,.3)}
+  /* invulvenster bovenaan, zodat het toetsenbord er niet overheen valt */
+  .sheet{position:fixed;left:10px;right:10px;top:calc(env(safe-area-inset-top) + 10px);z-index:11;background:var(--card);border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:12px;max-height:70vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,.35)}
   .sheet h3{margin:0;font-size:19px}
   .sheet p{margin:0}
   .sheet .row button{flex:1}
-  @media (min-width:700px){.sheet{left:50%;right:auto;width:520px;transform:translateX(-50%);bottom:auto;top:12vh;border-radius:18px}}
+  .sheet textarea{min-height:130px}
+  @media (min-width:700px){.sheet{left:50%;right:auto;width:520px;transform:translateX(-50%);top:10vh}}
+  .swatches{display:flex;gap:10px;flex-wrap:wrap}
+  .swatches button{width:44px;height:44px;border-radius:50%;padding:0;border:3px solid transparent;background:var(--c);box-shadow:inset 0 0 0 2px var(--card)}
+  .swatches button.on{border-color:var(--ink)}
+  .card.gc{border-top:5px solid var(--gc)}
+  .gdot{display:inline-block;width:11px;height:11px;border-radius:50%;background:var(--gc);margin-right:6px;vertical-align:0}
+  nav button.on.g{background:var(--gc);border-color:var(--gc);color:#fff}
+  nav button.on.g .gdot{background:#fff}
+  .swatch .sw{display:block;width:22px;height:22px;border-radius:50%;background:var(--gc);margin:auto}
+  .tag.g{border-color:var(--gc);color:var(--ink)}
+  .tag.g::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gc);margin-right:5px}
+  .settings button{min-height:34px;padding:4px 12px}
+  .fields{display:flex;gap:10px}
+  .fields label{flex:1;font-size:13px;color:var(--mute);display:flex;flex-direction:column;gap:4px}
   </style><div class="app" lang="nl">
     <div class="hdr" id="hdr"></div>
     <div class="search" id="searchwrap"><input id="q" data-a="q" type="search" placeholder="Zoek rijder, naam of transponder…" autocomplete="off" autocorrect="off" spellcheck="false"></div>
@@ -297,17 +334,18 @@
           <div class="row"><button data-s="cancel">Annuleren</button><button class="${o.danger ? 'danger' : 'pri'}" data-s="ok">${esc(o.ok || 'Opslaan')}</button></div>
         </div>`;
       R.modal = true;
-      const inp = layer.querySelector('#sin');
+      const inp = layer.querySelector('#sin') || layer.querySelector('input');
+      const okVal = () => o.collect ? o.collect(layer) : hasInput ? inp.value : true;
       const done = v => { layer.innerHTML = ''; layer.onclick = null; R.modal = false; resolve(v); };
       layer.onclick = ev => {
         const b = ev.target.closest('[data-s]'); if (!b) return;
         ev.stopPropagation();
-        if (b.dataset.s === 'ok') done(hasInput ? inp.value : true);
+        if (b.dataset.s === 'ok') done(okVal());
         else if (b.dataset.s === 'cancel') done(null);
         else if (o.onExtra) o.onExtra(b.dataset.s, inp, b);
       };
+      layer.querySelectorAll('input').forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); done(okVal()); } }));
       if (inp) {
-        inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !o.textarea) { e.preventDefault(); done(inp.value); } });
         try { inp.focus(); if (!o.textarea) inp.select(); } catch (e) {}
       }
     });
@@ -315,8 +353,8 @@
 
   /* ---------- html-onderdelen ---------- */
   function headerHTML() {
-    const opts = (R.rinks && R.rinks.length ? R.rinks : [{ id: S.rink, name: S.rinkName || 'IJsbaan', c: 'nl' }])
-      .map(r => `<option value="${r.id}"${r.id === S.rink ? ' selected' : ''}>${esc(r.name)}${r.c && r.c !== 'nl' ? ' (' + esc(r.c.toUpperCase()) + ')' : ''}</option>`).join('');
+    const opt = r => `<option value="${r.id}"${r.id === S.rink ? ' selected' : ''}>${esc(r.name)}</option>`;
+    const opts = `<optgroup label="Hoofdbaan">${opt(RINKS[0])}</optgroup><optgroup label="Andere banen">${RINKS.slice(1).map(opt).join('')}</optgroup>`;
     return `<div class="grow"><select data-a="rink" aria-label="IJsbaan">${opts}</select></div>
       <span class="live" id="live"></span>
       <button class="ghost icon" data-a="names" aria-label="Namen van rijders">👤</button>
@@ -324,7 +362,7 @@
   }
   function navHTML() {
     return `<button data-a="tab" data-v="ice" class="${S.tab === 'ice' ? 'on' : ''}">Op het ijs</button>
-      ${S.groups.map(g => `<button data-a="tab" data-v="${esc(g.id)}" class="${S.tab === g.id ? 'on' : ''}">${esc(g.name)} · ${g.chips.length}</button>`).join('')}
+      ${S.groups.map(g => `<button data-a="tab" data-v="${esc(g.id)}" class="g${S.tab === g.id ? ' on' : ''}" style="--gc:${g.color}"><span class="gdot"></span>${esc(g.name)} · ${g.chips.length}</button>`).join('')}
       <button data-a="newgroup">+ Groep</button>`;
   }
 
@@ -339,7 +377,7 @@
     rows.sort((x, y) => (x.on ? 0 : 1) - (y.on ? 0 : 1) || (rider(x.chip) ? 0 : 1) - (rider(y.chip) ? 0 : 1) || x.name.localeCompare(y.name, 'nl', { sensitivity: 'base' }));
     const list = rows.map(r => {
       const sel = R.sel.has(r.chip);
-      const gs = groupOfChip(r.chip).map(g => `<span class="tag">${esc(g.name)}</span>`).join('');
+      const gs = groupOfChip(r.chip).map(g => `<span class="tag g" style="--gc:${g.color}">${esc(g.name)}</span>`).join('');
       const noname = !rider(r.chip) && !tLabel(r.chip);
       return `<div class="sk${sel ? ' sel' : ''}${r.on ? '' : ' off'}" data-a="pick" data-v="${esc(r.chip)}" role="checkbox" aria-checked="${sel}">
         <div class="chk" aria-hidden="true">${sel ? '✓' : ''}</div>
@@ -366,7 +404,7 @@
     return `<div class="bar">
       ${hg ? `<button class="pri" data-a="addto" data-v="${esc(hg.id)}">+ ${esc(hg.name)} (${R.sel.size})</button><button data-a="mkgroup">Nieuwe groep</button>`
            : `<button class="pri" data-a="mkgroup">Nieuwe groep (${R.sel.size})</button>`}
-      ${others.map(g => `<button data-a="addto" data-v="${esc(g.id)}">+ ${esc(g.name)}</button>`).join('')}
+      ${others.map(g => `<button data-a="addto" data-v="${esc(g.id)}" style="--gc:${g.color}"><span class="gdot"></span>${esc(g.name)}</button>`).join('')}
       <button class="ghost" data-a="clearsel">Wissen</button></div>`;
   }
 
@@ -378,23 +416,28 @@
     const best = valid.length ? Math.min(...valid.map(l => l.d)) : NaN;
     const lapBlocks = blocksOf(laps).filter(b => b.laps), curBlock = lapBlocks.length ? lapBlocks[lapBlocks.length - 1].laps : [];
     const lastPass = lastPassOf(chip, laps);
-    const shown = last && !last.pause ? last : lastValid;
-    const cls = shown ? lapClass(shown.d, g, prevValid && shown === lastValid ? prevValid.d : null) : '';
+    /* groot: de laatste ronde die meetelt; vergelijking alleen binnen hetzelfde blok */
+    const shown = lastValid;
+    const inBlockPrev = curBlock.length >= 2 ? curBlock[curBlock.length - 2] : null;
+    const cls = shown ? lapClass(shown.d, g, inBlockPrev ? inBlockPrev.d : null) : '';
     let delta = '';
-    if (shown && prevValid && shown === lastValid) { const dd = shown.d - prevValid.d; delta = `<span class="delta ${dd < -0.05 ? 'good' : dd > 0.05 ? 'bad' : 'ok'}">${dd > 0 ? '+' : dd < 0 ? '−' : '±'}${Math.abs(dd).toFixed(2)}</span>`; }
+    if (shown && inBlockPrev) { const dd = shown.d - inBlockPrev.d; delta = `<span class="delta ${dd < -0.05 ? 'good' : dd > 0.05 ? 'bad' : 'ok'}">${dd > 0 ? '+' : dd < 0 ? '−' : '±'}${Math.abs(dd).toFixed(2)}</span>`; }
+    const outNote = last && last.pause && (!shown || last.t > shown.t) ? `<span class="small muted">laatst ${fmt(last.d, 1)} · telt niet mee</span>` : '';
     const strip = [...laps].reverse().slice(0, 16).map((l, i, arr) => {
       const sep = l.gap > 5 ? `<span class="lap p">ijs af</span>` : '';
-      if (l.pause) return `<span class="lap p">rust</span>` + sep;
-      const prev = arr.slice(i + 1).find(x => !x.pause);
+      if (l.pause) return `<span class="lap p" title="telt niet mee">${fmt(l.d, 1)}</span>` + sep;
+      const nx = arr[i + 1];
+      const prev = nx && !nx.pause && !(l.gap > 5) ? nx : null;
       return `<span class="lap ${lapClass(l.d, g, prev ? prev.d : null)}${l.d === best ? ' best' : ''}">${fmt(l.d, 1)}</span>` + sep;
     }).join('');
-    const status = lastPass ? `<span data-ago="${lastPass}" data-mode="card" data-rest="${lastValid ? (lastValid.d * 1.6).toFixed(1) : ''}"></span>` : '';
+    const status = lastPass ? `<span data-ago="${lastPass}" data-mode="card" data-rest="${(S.lapMax + 3).toFixed(1)}"></span>` : '';
     let body;
-    if (laps.length) body = `<div class="ctop"><span class="big ${cls}">${fmt(shown ? shown.d : NaN)}</span>${delta}</div>
-      <div class="stats"><span>ronde <b>${valid.length}</b></span><span>beste <b>${fmt(best)}</b></span><span>gem. blok <b>${fmt(avg(curBlock.map(l => l.d)))}</b></span>${g && g.target ? `<span>doel <b>${fmt(g.target)}</b></span>` : ''}</div>
+    if (valid.length) body = `<div class="ctop"><span class="big ${cls}">${fmt(shown.d)}</span>${delta}${outNote}</div>
+      <div class="stats"><span>rondes <b>${valid.length}</b></span><span>beste <b>${fmt(best)}</b></span><span>gem. blok <b>${fmt(avg(curBlock.map(l => l.d)))}</b></span>${g && g.target ? `<span>doel <b>${fmt(g.target)}</b></span>` : ''}</div>
       <div class="strip">${strip}</div>`;
+    else if (laps.length) body = `<div class="small muted" style="padding:6px 0">Nog geen ronde tussen ${fmt(S.lapMin)} en ${fmt(S.lapMax)} s.</div><div class="strip">${strip}</div>`;
     else body = `<div class="small muted" style="padding:6px 0">${deniedAll(chip) ? '🔒 Deze rijder heeft de rondetijden in Speedhive op privé staan.' : act ? 'Rondes laden…' : 'Vandaag nog niet gezien op deze baan.'}</div>`;
-    return `<div class="card" data-a="detail" data-v="${esc(chip)}">
+    return `<div class="card${g ? ' gc' : ''}" ${g ? `style="--gc:${g.color}"` : ''} data-a="detail" data-v="${esc(chip)}">
       <div class="row"><div class="grow"><div class="nm">${esc(nameOf(chip))}</div><div class="sub${!rider(chip) && !tLabel(chip) ? ' noname' : ''}">${esc(subOf(chip))}</div></div>
         <span class="small">${status}</span>
         <button class="ghost icon" data-a="rename" data-v="${esc(chip)}" aria-label="Naam rijder">✎</button></div>
@@ -404,13 +447,13 @@
 
   function groupHTML(g) {
     const cards = g.chips.map(c => cardHTML(c, g)).join('');
-    return `<div class="ghead"><h2>${esc(g.name)}</h2>
+    return `<div class="ghead" style="--gc:${g.color}"><button class="icon swatch" data-a="color" aria-label="Kleur van de groep"><span class="sw"></span></button><h2>${esc(g.name)}</h2>
       <button data-a="target">🎯 ${g.target ? fmt(g.target) : 'Doeltijd'}</button>
       <button class="icon" data-a="rengroup" aria-label="Groep hernoemen">✎</button>
       <button class="icon" data-a="delgroup" aria-label="Groep verwijderen">🗑</button></div>
       ${g.chips.length ? `<div class="cards">${cards}</div>` : `<div class="empty">Nog niemand in deze groep.</div>`}
       <div class="row" style="margin-top:12px"><button data-a="addmore" style="flex:1">+ Rijders toevoegen</button></div>
-      <div class="settings"><span>Rust als ronde langer is dan</span><input data-a="pf" type="number" inputmode="decimal" step="0.1" min="1.1" max="5" value="${S.pauseFactor}"><span>× normaal</span></div>`;
+      <div class="settings" data-a="window"><span>Ronde telt mee tussen <b>${fmt(S.lapMin)}</b> en <b>${fmt(S.lapMax)}</b> s.</span><button class="small">Wijzig</button></div>`;
   }
 
   function detailParts(chip) {
@@ -420,7 +463,7 @@
     let bi = 0;
     const body = blocksOf(laps).map(b => {
       if (b.off) return `<div class="prow">van het ijs · ${fmtAgo(b.gap)} (vanaf ${clock(b.from)})</div>`;
-      if (b.pause) return `<div class="prow">rust · ${fmt(b.lap.d, 0)} (vanaf ${clock(b.lap.t)})</div>`;
+      if (b.pause) return `<div class="prow">telt niet mee · ${b.out.map(l => fmt(l.d, 1)).join(', ')} (vanaf ${clock(b.out[0].t)})</div>`;
       bi++;
       const ds = b.laps.map(l => l.d), mn = Math.min(...ds), mx = Math.max(...ds), span = Math.max(mx - mn, 0.5);
       const rows = b.laps.map((l, i) => {
@@ -524,6 +567,21 @@
     show_();
   }
 
+  /* kleurkeuze in een invulvenster */
+  function colorPicker(start) {
+    const st = { color: start };
+    return {
+      st,
+      html: `<div class="swatches" role="radiogroup" aria-label="Kleur">${COLORS.map(c => `<button data-s="col" data-c="${c}" style="--c:${c}" class="${c === start ? 'on' : ''}" role="radio" aria-checked="${c === start}" aria-label="Kleur"></button>`).join('')}</div>`,
+      onExtra: (k, inp, b) => {
+        if (k !== 'col') return;
+        st.color = b.dataset.c;
+        b.parentNode.querySelectorAll('button').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b); });
+      }
+    };
+  }
+  const num = s => parseFloat(String(s).replace(',', '.'));
+
   async function onAction(a, v) {
     const g = activeGroup();
     switch (a) {
@@ -536,9 +594,10 @@
       case 'addmore': R.hint = g ? g.id : null; S.tab = 'ice'; R.detail = null; show_(); $('main').scrollTop = 0; return;
       case 'newgroup': case 'mkgroup': {
         const sel = [...R.sel];
-        const name = await sheet({ title: 'Nieuwe groep', text: sel.length ? `${sel.length} rijder${sel.length === 1 ? '' : 's'} komen in deze groep.` : 'Daarna tik je onder “Op het ijs” de rijders aan.', value: 'Groep ' + (S.groups.length + 1), ok: 'Maak groep' });
+        const cp = colorPicker(nextColor());
+        const name = await sheet({ title: 'Nieuwe groep', text: (sel.length ? `${sel.length} rijder${sel.length === 1 ? '' : 's'} komen in deze groep.` : 'Daarna tik je onder “Op het ijs” de rijders aan.') + ' Kies een naam en een kleur.', value: 'Groep ' + (S.groups.length + 1), ok: 'Maak groep', extra: cp.html, onExtra: cp.onExtra });
         if (name === null) return;
-        const ng = { id: 'g' + uid(), name: (name.trim() || 'Groep ' + (S.groups.length + 1)).slice(0, 30), chips: [], target: null };
+        const ng = { id: 'g' + uid(), name: (name.trim() || 'Groep ' + (S.groups.length + 1)).slice(0, 30), chips: [], target: null, color: cp.st.color };
         if (a === 'mkgroup') { addChips(ng, sel); rememberChips(sel); R.sel.clear(); }
         S.groups.push(ng);
         if (a === 'mkgroup') { S.tab = ng.id; R.hint = null; }
@@ -553,6 +612,24 @@
         const n = await sheet({ title: 'Doeltijd per ronde', text: 'Bijvoorbeeld 34 of 34,5 of 1:05. Laat leeg voor geen doeltijd.', value: g.target ? fmt(g.target).replace('.', ',') : '', placeholder: '34,5', inputmode: 'decimal' });
         if (n === null) return; const t = parseDur(n.replace(/,/g, '.')); g.target = isFinite(t) && t > 0 && t < 600 ? t : null; show_(); return;
       }
+      case 'color': {
+        if (!g) return;
+        const cp = colorPicker(g.color);
+        const ok = await sheet({ title: 'Kleur van “' + g.name + '”', extra: cp.html, onExtra: cp.onExtra });
+        if (ok) { g.color = cp.st.color; show_(); } return;
+      }
+      case 'window': {
+        const r = await sheet({
+          title: 'Welke rondes tellen mee?',
+          text: 'Rondes daarbuiten zijn rust, een stijger of een halve ronde. Ze staan grijs en tellen niet mee voor blok, gemiddelde en beste ronde.',
+          extra: `<div class="fields"><label>Snelste ronde (s)<input id="wmin" type="text" inputmode="decimal" value="${fmt(S.lapMin).replace('.', ',')}"></label><label>Langzaamste ronde (s)<input id="wmax" type="text" inputmode="decimal" value="${fmt(S.lapMax).replace('.', ',')}"></label></div>`,
+          collect: L => ({ min: num(L.querySelector('#wmin').value), max: num(L.querySelector('#wmax').value) })
+        });
+        if (!r) return;
+        if (r.min > 0 && r.max > r.min && r.max < 600) { S.lapMin = r.min; S.lapMax = r.max; show_(); }
+        else { await sheet({ title: 'Dat klopt niet helemaal', text: 'De langzaamste ronde moet langer zijn dan de snelste, bijvoorbeeld 25 en 37.', ok: 'Oké' }); }
+        return;
+      }
       case 'detail': R.detail = v; render(true); pollNow(); return;
       case 'back': R.detail = null; render(true); return;
       case 'rename': await askName(v); return;
@@ -563,7 +640,7 @@
   app.addEventListener('click', ev => {
     const el = ev.target.closest('[data-a]'); if (!el || !app.contains(el)) return;
     const a = el.dataset.a;
-    if (a === 'q' || a === 'rink' || a === 'pf') return;
+    if (a === 'q' || a === 'rink') return;
     ev.preventDefault(); ev.stopPropagation();
     onAction(a, el.dataset.v);
   });
@@ -575,11 +652,10 @@
   app.addEventListener('change', ev => {
     const el = ev.target;
     if (el.dataset.a === 'rink') {
-      S.rink = +el.value; const r = (R.rinks || []).find(x => x.id === S.rink); S.rinkName = r ? r.name : '';
+      S.rink = +el.value;
       R.today.clear(); R.laps.clear(); R.sel.clear(); R.first = true; R.lastOk = 0; R.err = null; R.detail = null;
       S.hist = { day: today(), rink: S.rink, acts: {} }; show_(); pollNow();
     }
-    if (el.dataset.a === 'pf') { const f = parseFloat(String(el.value).replace(',', '.')); if (f >= 1.1 && f <= 5) { S.pauseFactor = f; el.blur(); show_(); } }
   });
 
   /* ---------- open / dicht ---------- */
@@ -599,6 +675,5 @@
   window[NS] = { toggle: () => (R.open ? hide() : show()), show: () => { if (!R.open) show(); }, version: VERSION };
   document.addEventListener('visibilitychange', onVis);
   (document.body || document.documentElement).appendChild(host);
-  loadRinks();
   show();
 })();
