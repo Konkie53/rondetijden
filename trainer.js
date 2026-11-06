@@ -3,7 +3,7 @@
    Gebruikt dezelfde publieke practice-gegevens die de site zelf toont. */
 (() => {
   const NS = '__rtTrainer';
-  if (window[NS]) { window[NS].toggle(); return; }
+  if (window[NS]) { (window[NS].show || window[NS].toggle)(); return; }
   if (!/(^|\.)speedhive\.mylaps\.com$/.test(location.hostname)) {
     alert('Open eerst speedhive.mylaps.com en tik daarna nog een keer op de bladwijzer.');
     location.href = 'https://speedhive.mylaps.com/practice/2497';
@@ -228,6 +228,8 @@
   .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .sub{font-size:13px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .sub.noname{font-style:italic}
+  .sub.wrap{white-space:normal}
+  .hint{background:var(--card);border:1px solid var(--acc);border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:15px}
   .tag{display:inline-block;font-size:12px;padding:1px 7px;border-radius:999px;background:var(--bg);border:1px solid var(--line);color:var(--mute);margin:3px 4px 0 0}
   .bar{position:fixed;left:0;right:0;bottom:0;padding:10px 12px calc(env(safe-area-inset-bottom) + 10px);background:var(--card);border-top:1px solid var(--line);display:flex;gap:8px;overflow-x:auto;box-shadow:0 -6px 20px -12px rgba(0,0,0,.35)}
   .ghead{display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap}
@@ -343,7 +345,7 @@
         <div class="chk" aria-hidden="true">${sel ? '✓' : ''}</div>
         <div class="grow"><div class="nm">${esc(r.name)}</div>
           <div class="sub${noname ? ' noname' : ''}">${esc(subOf(r.chip))}</div>
-          <div class="sub">sinds ${clock(Date.parse(r.a.startTime))} · ${r.on ? `<span data-ago="${Date.parse(r.a.endTime)}" data-mode="seen"></span>` : 'weg sinds ' + clock(Date.parse(r.a.endTime))}</div>${gs}</div>
+          <div class="sub wrap">sinds ${clock(Date.parse(r.a.startTime))} · ${r.on ? `<span data-ago="${Date.parse(r.a.endTime)}" data-mode="seen"></span>` : 'weg sinds ' + clock(Date.parse(r.a.endTime))}</div>${gs}</div>
         <button class="ghost icon" data-a="rename" data-v="${esc(r.chip)}" aria-label="Naam rijder">✎</button>
         <button class="ghost icon" data-a="detail" data-v="${esc(r.chip)}" aria-label="Rondetijden">›</button>
       </div>`;
@@ -351,15 +353,20 @@
     const head = `<div class="row small muted" style="margin-bottom:8px;justify-content:space-between">
       <span>${activeCount} schaatser${activeCount === 1 ? '' : 's'} op het ijs</span>
       <button class="ghost small" data-a="earlier">${S.showEarlier ? 'Alleen op het ijs' : 'Ook eerder vandaag'}</button></div>`;
+    const hg = R.hint && S.groups.find(x => x.id === R.hint);
+    const hint = hg ? `<div class="hint">Tik de rijders aan voor <b>${esc(hg.name)}</b> en tik daarna onderaan op <b>+ ${esc(hg.name)}</b>.</div>` : '';
     const empty = R.lastOk ? `<div class="empty">${q ? 'Niemand gevonden met “' + esc(R.q) + '”.' : 'Nu niemand op het ijs bij deze baan.'}</div>` : `<div class="empty">Gegevens laden…</div>`;
-    return head + (list ? `<div class="list">${list}</div>` : empty) + `<div class="empty small">Tik schaatsers aan om ze in een groep te zetten. ✎ = naam van de rijder invullen, › = rondetijden.</div>`;
+    return hint + head + (list ? `<div class="list">${list}</div>` : empty) + `<div class="empty small">Tik schaatsers aan om ze in een groep te zetten. ✎ = naam van de rijder invullen, › = rondetijden.</div>`;
   }
 
   function barHTML() {
     if (S.tab !== 'ice' || !R.sel.size || R.detail) return '';
+    const hg = R.hint && S.groups.find(x => x.id === R.hint);
+    const others = S.groups.filter(g => g !== hg);
     return `<div class="bar">
-      <button class="pri" data-a="mkgroup">Nieuwe groep (${R.sel.size})</button>
-      ${S.groups.map(g => `<button data-a="addto" data-v="${esc(g.id)}">+ ${esc(g.name)}</button>`).join('')}
+      ${hg ? `<button class="pri" data-a="addto" data-v="${esc(hg.id)}">+ ${esc(hg.name)} (${R.sel.size})</button><button data-a="mkgroup">Nieuwe groep</button>`
+           : `<button class="pri" data-a="mkgroup">Nieuwe groep (${R.sel.size})</button>`}
+      ${others.map(g => `<button data-a="addto" data-v="${esc(g.id)}">+ ${esc(g.name)}</button>`).join('')}
       <button class="ghost" data-a="clearsel">Wissen</button></div>`;
   }
 
@@ -522,11 +529,11 @@
     switch (a) {
       case 'close': hide(); return;
       case 'names': await namesSheet(); return;
-      case 'tab': S.tab = v; R.detail = null; R.q = ''; qInput.value = ''; show_(); $('main').scrollTop = 0; pollNow(); return;
+      case 'tab': S.tab = v; R.detail = null; R.hint = null; R.q = ''; qInput.value = ''; show_(); $('main').scrollTop = 0; pollNow(); return;
       case 'pick': R.sel.has(v) ? R.sel.delete(v) : R.sel.add(v); render(true); return;
       case 'clearsel': R.sel.clear(); render(true); return;
       case 'earlier': S.showEarlier = !S.showEarlier; show_(); return;
-      case 'addmore': S.tab = 'ice'; R.detail = null; show_(); $('main').scrollTop = 0; return;
+      case 'addmore': R.hint = g ? g.id : null; S.tab = 'ice'; R.detail = null; show_(); $('main').scrollTop = 0; return;
       case 'newgroup': case 'mkgroup': {
         const sel = [...R.sel];
         const name = await sheet({ title: 'Nieuwe groep', text: sel.length ? `${sel.length} rijder${sel.length === 1 ? '' : 's'} komen in deze groep.` : 'Daarna tik je onder “Op het ijs” de rijders aan.', value: 'Groep ' + (S.groups.length + 1), ok: 'Maak groep' });
@@ -534,10 +541,11 @@
         const ng = { id: 'g' + uid(), name: (name.trim() || 'Groep ' + (S.groups.length + 1)).slice(0, 30), chips: [], target: null };
         if (a === 'mkgroup') { addChips(ng, sel); rememberChips(sel); R.sel.clear(); }
         S.groups.push(ng);
-        if (a === 'mkgroup' || !R.today.size) S.tab = ng.id;
+        if (a === 'mkgroup') { S.tab = ng.id; R.hint = null; }
+        else { S.tab = 'ice'; R.hint = ng.id; R.detail = null; $('main').scrollTop = 0; }
         show_(); pollNow(); return;
       }
-      case 'addto': { const tg = S.groups.find(x => x.id === v); if (!tg) return; const sel = [...R.sel]; addChips(tg, sel); rememberChips(sel); R.sel.clear(); S.tab = tg.id; show_(); pollNow(); return; }
+      case 'addto': { const tg = S.groups.find(x => x.id === v); if (!tg) return; const sel = [...R.sel]; addChips(tg, sel); rememberChips(sel); R.sel.clear(); R.hint = null; S.tab = tg.id; show_(); pollNow(); return; }
       case 'rengroup': { if (!g) return; const n = await sheet({ title: 'Groep hernoemen', value: g.name }); if (n && n.trim()) { g.name = n.trim().slice(0, 30); show_(); } return; }
       case 'delgroup': { if (!g) return; const ok = await sheet({ title: 'Groep “' + g.name + '” verwijderen?', text: 'De rijders en hun namen blijven gewoon bewaard.', ok: 'Verwijder', danger: true }); if (ok) { S.groups = S.groups.filter(x => x !== g); S.tab = 'ice'; show_(); } return; }
       case 'target': {
@@ -588,7 +596,7 @@
     clearTimeout(R.timer); clearInterval(R.tick); clearTimeout(R.deferT);
     try { R.wake && R.wake.release(); } catch (e) {} R.wake = null;
   }
-  window[NS] = { toggle: () => (R.open ? hide() : show()), version: VERSION };
+  window[NS] = { toggle: () => (R.open ? hide() : show()), show: () => { if (!R.open) show(); }, version: VERSION };
   document.addEventListener('visibilitychange', onVis);
   (document.body || document.documentElement).appendChild(host);
   loadRinks();
